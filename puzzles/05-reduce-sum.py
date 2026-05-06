@@ -63,7 +63,17 @@ def tl_reduce_sum(A, BLOCK_N: int, BLOCK_M: int):
     A: T.Tensor((N, M), dtype)
     B = T.empty((N,), dtype)
 
-    # TODO: Implement this function
+    with T.Kernel(N // BLOCK_N, threads=256) as pid_n:
+        A_local = T.alloc_fragment((BLOCK_N, BLOCK_M), dtype)
+        B_local = T.alloc_fragment((BLOCK_N,), dtype)
+
+        T.clear(B_local)
+
+        for m_blk_id in T.Serial(M // BLOCK_M):
+            T.copy(A[pid_n * BLOCK_N, m_blk_id * BLOCK_M], A_local)
+            T.reduce_sum(A_local, B_local, dim=1, clear=False)
+
+        T.copy(B_local, B[pid_n * BLOCK_N])
 
     return B
 
