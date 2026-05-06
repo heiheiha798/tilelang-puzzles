@@ -106,6 +106,11 @@ def tl_mul_relu_1d(A, B, BLOCK_N: int):
     C = T.empty((N,), T.float16)
 
     # TODO: Implement this function
+    with T.Kernel(N // BLOCK_N, threads=256) as bx:
+        base_idx = bx * BLOCK_N
+        for i in T.Parallel(BLOCK_N):
+            mul_value = A[base_idx + i] * B[base_idx + i]
+            C[base_idx + i] = T.if_then_else(mul_value > 0, mul_value, 0)
 
     return C
 
@@ -166,6 +171,20 @@ def tl_mul_relu_1d_mem(A, B, BLOCK_N: int):
     C = T.empty((N,), dtype)
 
     # TODO: Implement this function
+    with T.Kernel(N // BLOCK_N, threads=256) as bx:
+        base_idx = bx * BLOCK_N
+        A_local = T.alloc_fragment((BLOCK_N,), dtype)
+        B_local = T.alloc_fragment((BLOCK_N,), dtype)
+        C_local = T.alloc_fragment((BLOCK_N,), dtype)
+
+        T.copy(A[base_idx], A_local)
+        T.copy(B[base_idx], B_local)
+
+        for i in T.Parallel(BLOCK_N):
+            C_local[i] = A_local[i] * B_local[i]
+            C_local[i] = T.if_then_else(C_local[i] > 0, C_local[i], 0)
+
+        T.copy(C_local, C[base_idx])
 
     return C
 
