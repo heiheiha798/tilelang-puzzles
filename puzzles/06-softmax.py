@@ -82,7 +82,41 @@ def tl_softmax(A, BLOCK_N: int, BLOCK_M: int):
     A: T.Tensor((N, M), dtype)
     B = T.empty((N, M), dtype)
 
-    # TODO: Implement this function
+    with T.Kernel(N // BLOCK_N, threads=256) as pid_n:
+        A_local = T.alloc_fragment((BLOCK_N, BLOCK_M), dtype)
+        B_local = T.alloc_fragment((BLOCK_N, BLOCK_M), dtype)
+        cur_exp_A = T.alloc_fragment((BLOCK_N, BLOCK_M), dtype)
+        cur_max_A = T.alloc_fragment((BLOCK_N,), dtype)
+        cur_sum_exp_A = T.alloc_fragment((BLOCK_N,), dtype)
+        m_global = T.alloc_fragment((BLOCK_N,), dtype)
+        d_global = T.alloc_fragment((BLOCK_N,), dtype)
+
+        T.fill(m_global, -T.infinity(dtype))
+        T.clear(d_global)
+
+        for m_blk_id in T.Serial(M // BLOCK_M):
+            T.copy(A[pid_n * BLOCK_N, m_blk_id * BLOCK_M], A_local)
+            T.reduce_max(A_local, cur_max_A, dim=1, clear=True)
+            for i in T.Parallel(BLOCK_N):
+                m_prev = m_global[i]
+                m_global[i] = T.max(m_global[i], cur_max_A[i])
+                d_global[i] = d_global[i] * T.exp2((m_prev - m_global[i]) * log2_e)
+
+            for i, j in T.Parallel(BLOCK_N, BLOCK_M):
+                cur_exp_A[i, j] = T.exp2((A_local[i, j] - m_global[i]) * log2_e)
+
+            T.reduce_sum(cur_exp_A, cur_sum_exp_A, dim=1, clear=True)
+
+            for i in T.Parallel(BLOCK_N):
+                d_global[i] += cur_sum_exp_A[i]
+
+        for m_blk_id in T.Serial(M // BLOCK_M):
+            T.copy(A[pid_n * BLOCK_N, m_blk_id * BLOCK_M], A_local)
+
+            for i, j in T.Parallel(BLOCK_N, BLOCK_M):
+                B_local[i, j] = T.exp2((A_local[i, j] - m_global[i]) * log2_e) / d_global[i]
+
+            T.copy(B_local, B[pid_n * BLOCK_N, m_blk_id * BLOCK_M])
 
     return B
 
