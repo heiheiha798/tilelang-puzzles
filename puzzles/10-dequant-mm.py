@@ -1,8 +1,8 @@
 """
 Puzzle 10: Dequantized Matrix Multiplication
 ==============
-In the final puzzle in our journey, let's build a very useful variant of matmul kernel which can be
-used in real research work.
+在最后这个 puzzle 里，我们来实现一个非常实用的 matmul kernel 变体，
+它在真实 research work 里也很常见。
 
 Category: ["official"]
 Difficulty: ["hard"]
@@ -15,36 +15,37 @@ import torch
 from common.utils import test_puzzle
 
 """
-Dequantized Matrix Multiplication is to multiply two matrices in different precisons, which is
-widely used in the depolyment of quantized LLMs. We consider a common setting here: FP16A * INT4B.
-Because INT4 is less than a byte, we usually packed two INT4 in a storage type, like UINT8.
+Dequantized Matrix Multiplication 指的是在不同 precision 之间做 matrix multiplication，
+这在量化 LLM 的部署里非常常见。这里我们考虑一个典型设置：`FP16A * INT4B`。
+由于 INT4 小于 1 byte，所以通常会把两个 INT4 pack 进一个更大的 storage type 里，
+比如 `UINT8`。
 
 10-1: Dequantized Matrix Multiplication.
 
-Inputs:
-    A: Tensor([M, K], float16)  # input tensor
-    B: Tensor([K, N // 2], uint8)  # input tensor (packed int4)
-    N: int   # size of the tensor. 1 <= N <= 8192
-    M: int   # size of the tensor. 1 <= M <= 8192
-    K: int   # size of the tensor. 1 <= K <= 8192
+输入:
+    A: Tensor([M, K], float16)  # 输入 tensor
+    B: Tensor([K, N // 2], uint8)  # 输入 tensor（packed int4）
+    N: int   # tensor 的大小，1 <= N <= 8192
+    M: int   # tensor 的大小，1 <= M <= 8192
+    K: int   # tensor 的大小，1 <= K <= 8192
 
-Output:
-    C: Tensor([M, N], float16)  # output tensor
+输出:
+    C: Tensor([M, N], float16)  # 输出 tensor
 
-Intermediates:
-    ACC0: float32  # accumulator
-    ACC1: float32  # accumulator
-    B_high: float16  # high bits of B
-    B_low: float16   # low bits of B
+中间量:
+    ACC0: float32  # 累加器，accumulator
+    ACC1: float32  # 累加器，accumulator
+    B_high: float16  # B 的高 4 bits
+    B_low: float16   # B 的低 4 bits
 
-Definition:
+定义:
     for i in range(M):
         for j in range(N // 2):
             ACC0 = 0
             ACC1 = 0
             for k in range(K):
-                B_low = float16(B[k, j] & 0x0F) - 8.0  # signed int4
-                B_high = float16((B[k, j] >> 4) & 0x0F) - 8.0  # signed int4
+                B_low = float16(B[k, j] & 0x0F) - 8.0  # 有符号 signed int4
+                B_high = float16((B[k, j] >> 4) & 0x0F) - 8.0  # 有符号 signed int4
                 ACC0 += A[i, k] * B_low
                 ACC1 += A[i, k] * B_high
             C[i, j * 2] = ACC0
@@ -60,12 +61,12 @@ def ref_dequant_matmul(A: torch.Tensor, B: torch.Tensor):
     assert B.dtype == torch.uint8
 
     K = A.shape[1]
-    N = B.shape[1] * 2  # B.shape[1] == N // 2 because of packing
+    N = B.shape[1] * 2  # 因为 packing，B.shape[1] == N // 2
 
     B_dequantized = torch.zeros((K, N), dtype=torch.float16, device=B.device)
     B_dequantized[:, ::2] = B[:, :] & 0x0F
     B_dequantized[:, 1::2] = (B[:, :] >> 4) & 0x0F
-    B_dequantized = B_dequantized.to(torch.float16) - 8.0  # dequantize
+    B_dequantized = B_dequantized.to(torch.float16) - 8.0  # 执行 dequantize
 
     return torch.matmul(input=A, other=B_dequantized)
 

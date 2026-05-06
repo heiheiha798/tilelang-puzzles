@@ -1,7 +1,7 @@
 """
 Puzzle 03: Outer Vector Add
 ==============
-In this puzzle we will enter the 2D world!
+这个 puzzle 里，我们正式进入 2D world。
 
 Category: ["official"]
 Difficulty: ["easy"]
@@ -14,28 +14,27 @@ import torch
 from common.utils import test_puzzle
 
 """
-Consider an outer vector addition operation. The result is a matrix where
-each element (i, j) is the sum of A[i] and B[j].
+考虑一个 outer vector addition operation。它的结果是一个 matrix，其中
+每个元素 `(i, j)` 都等于 `A[i] + B[j]`。
 
-The main difference from the previous puzzle is that C is now a 2D tensor and
-we have two different iterators in buffers A and B. So the dataflow is also
-a little different.
+和前一个 puzzle 相比，最大的区别是现在 `C` 变成了 2D tensor，
+而且 `A` 和 `B` 这两个 buffer 的迭代方式也不一样，所以 dataflow 也会略有变化。
 
-But remeMber that any N dimensional tensor can be viewed as a 1D tensor in memory.
-So we just need to handle the indexing properly.
+但要记住，任何 N 维 tensor 在 memory 里本质上都可以看成 1D tensor。
+因此关键只是把 indexing 处理正确。
 
 03-1: Outer vector addition.
 
-Inputs:
-    A: Tensor([N,], float16)  # input tensor
-    B: Tensor([M,], float16)  # input tensor
-    N: int   # size of the tensor. 1 <= N <= 8192
-    M: int   # size of the tensor. 1 <= M <= 8192
+输入:
+    A: Tensor([N,], float16)  # 输入 tensor
+    B: Tensor([M,], float16)  # 输入 tensor
+    N: int   # tensor 的大小，1 <= N <= 8192
+    M: int   # tensor 的大小，1 <= M <= 8192
 
-Output:
-    C: [N, M]  # output tensor
+输出:
+    C: [N, M]  # 输出 tensor
 
-Definition:
+定义:
     for i in range(N):
         for j in range(M):
             C[i, j] = A[i] + B[j]

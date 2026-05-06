@@ -1,7 +1,7 @@
 """
 Puzzle 06: Softmax
 ==============
-Softmax is the first fundermental NN operator we learn in this tutorial.
+Softmax 是这套教程里我们学习到的第一个 fundamental NN operator。
 
 Category: ["official"]
 Difficulty: ["medium"]
@@ -14,43 +14,42 @@ import torch
 from common.utils import bench_puzzle, test_puzzle
 
 r"""
-Softmax operator goes a little beyond the reduce sum. We also need to use serial loop to
-accumulate the summation. And we need to perform an element-wise exp operation on each element
-at the same time.
+Softmax operator 比 reduce sum 更进一步。除了做求和之外，我们还需要使用 serial loop
+来累积 summation，同时对每个元素执行 element-wise 的 exp operation。
 
-Note that softmax needs to be computed in numerically stable form as in Python. To achieve this,
-we need to subtract the maximum value of each row from all elements in that row
-before applying the exponential function.
+注意，softmax 需要像 Python 里常见实现那样，以 numerically stable 的形式来计算。
+具体做法是：在应用 exponential function 之前，先用每一行的最大值减掉该行所有元素。
 
-HINT:
-1. Use `T.fill` to set the initial value of the buffer. `T.clear` sets all elements to zero by
-default, which may not be what you want.
+提示:
+1. 用 `T.fill` 来设置 buffer 的初始值。`T.clear` 默认会把所有元素清成零，
+这不一定是你想要的行为。
 
-3.We recommend not using `T.exp` but instead using `T.exp2`. You need the identity
+3. 我们更推荐不用 `T.exp`，而是改用 `T.exp2`。你需要用到下面这个恒等式：
 
 .. math::
     \exp(x) = 2^{\log_2(e) x}
 
-The constant log2_e is provided.
+常量 `log2_e` 已经提供好了。
 
-BONUS: Use "Online Softmax" algorithm to implement optimized softmax. This is also a core idea of
-FlashAttention algorithm. Through this, we can implement softmax with only two passes / loops.
+进阶：尝试用 "Online Softmax" algorithm 来实现优化版 softmax。
+这也是 FlashAttention algorithm 的核心思想之一。使用它之后，softmax 可以只用
+两轮 pass / loop 来完成。
 
 06-1: Softmax.
 
-Inputs:
-    A: Tensor([N, M], float32)  # input tensor
-    N: int   # size of the tensor. 1 <= N <= 4096
-    M: int   # size of the tensor. 1 <= M <= 16384
+输入:
+    A: Tensor([N, M], float32)  # 输入 tensor
+    N: int   # tensor 的大小，1 <= N <= 4096
+    M: int   # tensor 的大小，1 <= M <= 16384
 
-Output:
-    B: Tensor([N, M], float16)  # output tensor
+输出:
+    B: Tensor([N, M], float16)  # 输出 tensor
 
-Intermediates:
-    MAX: float32  # max value of each row
-    SUM: float32  # summation of each row
+中间量:
+    MAX: float32  # 每一行的最大值
+    SUM: float32  # 每一行的求和值
 
-Definition:
+定义:
     for i in range(N):
         SUM = 0
         MAX = -inf

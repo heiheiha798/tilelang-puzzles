@@ -1,7 +1,7 @@
 """
 Puzzle 07: Scalar FlashAttention
 ==============
-From softmax to FlashAttention, we just need some computation.
+从 softmax 走到 FlashAttention，本质上只差一些额外计算。
 
 Category: ["official"]
 Difficulty: ["medium"]
@@ -14,34 +14,34 @@ import torch
 from common.utils import bench_puzzle, test_puzzle
 
 """
-Now we have conquered softmax / online softmax, we can now implement one of the most important
-operator in LLMs: FlashAttention.
+既然你已经掌握了 softmax / online softmax，现在就可以开始实现 LLM 里最重要的
+operator 之一：FlashAttention。
 
-To ensure a progressive learning experience, we will implement a scalar version of FlashAttention.
-And we also remove the multi-head attention part. So in total we only have two dimensions: batch
-size B and sequence length S, which are aligned with N, M in the previous puzzle. After such
-simplification, you will find we are not so far from the FlashAttention algorithm. And with
-TileLang, we can easily extend it to the full FlashAttention.
+为了让学习曲线更平滑，这里我们先实现一个 scalar 版本的 FlashAttention。
+同时也去掉 multi-head attention 部分。这样整个问题只剩两个维度：batch size `B`
+和 sequence length `S`，它们和上一题里的 `N`、`M` 基本是对应的。
+做完这些简化之后，你会发现自己离真正的 FlashAttention algorithm 其实已经不远了。
+而在 TileLang 里，从这个版本扩展到完整 FlashAttention 也会更自然。
 
-06-1: Simplified Scalar Flash Attention.
+07-1: Simplified Scalar Flash Attention.
 
-Inputs:
-    Q: Tensor([B, S], float32)  # input tensor
-    K: Tensor([B, S], float32)  # input tensor
-    V: Tensor([B, S], float32)  # input tensor
-    B: int   # batch size dimension. 1 <= B <= 256
-    S: int   # sequence length dimension. 1 <= S <= 16384
+输入:
+    Q: Tensor([B, S], float32)  # 输入 tensor
+    K: Tensor([B, S], float32)  # 输入 tensor
+    V: Tensor([B, S], float32)  # 输入 tensor
+    B: int   # batch size 维度，1 <= B <= 256
+    S: int   # sequence length 维度，1 <= S <= 16384
 
-Output:
-    O: Tensor([B, S], float32)  # output tensor
+输出:
+    O: Tensor([B, S], float32)  # 输出 tensor
 
-Intermediates:
-    MAX: float32  # max value of each row
-    SUM: float32  # summation of each row
-    QK: Tensor([B, S], float32)  # results of q*k
-    P:  Tensor([B, S], float32)  # results of softmax(q*k) (not divided by summation).
+中间量:
+    MAX: float32  # 每一行的最大值
+    SUM: float32  # 每一行的求和值
+    QK: Tensor([B, S], float32)  # `q * k` 的结果
+    P:  Tensor([B, S], float32)  # `softmax(q * k)` 的中间结果（尚未除以 summation）
 
-Definition:
+定义:
     for i in range(B):
         SUM = 0
         MAX = -inf

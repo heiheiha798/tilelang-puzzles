@@ -1,7 +1,7 @@
 """
 Puzzle 02: Vector Add
 ==============
-This puzzle asks you to implement a vector addition operation.
+这个 puzzle 要你实现一个 vector addition operation。
 
 Category: ["official"]
 Difficulty: ["easy"]
@@ -14,22 +14,22 @@ import torch
 from common.utils import bench_puzzle, test_puzzle
 
 """
-Vector addition is our first step towards computation. Tilelang provides basic arithmetic
-operations like add, sub, mul, div, etc. But these operations are element-wise (They are not
-TileOps like T.copy). So we need a loop abstraction to iterate over elements in the tensor.
-Inside the loop body, we can perform whatever computation we want.
+vector addition 是我们正式进入计算类 kernel 的第一步。TileLang 提供了基础 arithmetic
+operation，比如 add、sub、mul、div 等。但这些 operation 都是 element-wise 的
+（它们不像 `T.copy` 那样属于 TileOp）。所以我们需要借助 loop abstraction 来遍历
+tensor 中的元素，并在 loop body 里写下自己需要的计算逻辑。
 
 02-1: 1-D vector addition.
 
-Inputs:
-    A: Tensor([N,], float16)  # input tensor
-    B: Tensor([N,], float16)  # input tensor
-    N: int   # size of the tensor. 1 <= N <= 1024*1024
+输入:
+    A: Tensor([N,], float16)  # 输入 tensor
+    B: Tensor([N,], float16)  # 输入 tensor
+    N: int   # tensor 的大小，1 <= N <= 1024*1024
 
-Output:
-    C: Tensor([N,], T.float16)  # output tensor
+输出:
+    C: Tensor([N,], T.float16)  # 输出 tensor
 
-Definition:
+定义:
     for i in range(N):
         C[i] = A[i] + B[i]
 """
@@ -66,25 +66,25 @@ def run_add_1d():
 
 
 """
-We can fuse more elementwise operations into this kernel.
-Now that's do an element-wise multiplication with a ReLU activation.
+我们还可以把更多 element-wise operation 融合进同一个 kernel。
+现在试着做一个 element-wise multiplication，并接一个 ReLU activation。
 
-HINT: We can use T.if_then_else(cond, true_value, false_value) to implement conditional logic.
+提示：可以用 `T.if_then_else(cond, true_value, false_value)` 来实现 conditional logic。
 
 02-2: 1-D vector multiplication with ReLU activation
 
-Inputs:
-    A: Tensor([N,], float16)  # input tensor
-    B: Tensor([N,], float16)  # input tensor
-    N: int   # size of the tensor. 1 <= N <= 1024*1024
+输入:
+    A: Tensor([N,], float16)  # 输入 tensor
+    B: Tensor([N,], float16)  # 输入 tensor
+    N: int   # tensor 的大小，1 <= N <= 1024*1024
 
-Output:
-    C: Tensor([N,], T.float16)  # output tensor
+输出:
+    C: Tensor([N,], T.float16)  # 输出 tensor
 
-Output:
-    C: [N,]  # output tensor
+输出:
+    C: [N,]  # 输出 tensor
 
-Definition:
+定义:
     for i in range(N):
         C[i] = max(0, A[i] * B[i])
 """
@@ -118,40 +118,37 @@ def run_mul_relu_1d():
 
 
 """
-NOTE: This section needs some understanding of GPU memory hierarchy and basic CUDA
-programming knowledge.
+注意：这一节需要你对 GPU memory hierarchy 和基础 CUDA 编程有一点了解。
 
-We can further optimize the previous example. Here, we introduce a common optimization technique
-used in kernel programming. If you have experience with CUDA or other GPU programming frameworks,
-you are likely aware of the memory hierarchy on GPUs.
+我们可以继续优化上一个例子。这里会引入一种 kernel programming 中非常常见的优化思路。
+如果你写过 CUDA 或其他 GPU 编程框架，应该已经知道 GPU 上存在分层的 memory hierarchy。
 
-Typically, there are three main levels of memory: global memory (DRAM), shared memory, and
-registers. Registers are the fastest but also the smallest form of memory. In CUDA, registers are
-allocated when you declare local variables within a kernel.
+通常主要有三层 memory：global memory (DRAM)、shared memory 和 registers。
+其中 registers 最快，但容量也最小。在 CUDA 中，你在 kernel 内声明 local variable 时，
+往往就会对应到 registers 的使用。
 
-Our previous implementation loads data directly from A and B and stores the result to C, where A, B,
-and C are all passed as global memory pointers. This is inefficient because it requires accessing
-global memory for every single element. You can use print_source_code() to inspect the generated
-CUDA code.
+前面的实现是直接从 `A`、`B` 读取数据，再把结果写回 `C`，而 `A`、`B`、`C`
+本质上都是 global memory pointer。这样做不够高效，因为每个元素都要单独访问
+global memory。你可以用 `print_source_code()` 来查看生成出来的 CUDA code。
 
-Here, we consider using registers to optimize the kernel. The key idea is to copy multiple data
-elements between registers and global memory in a single operation. For example, CUDA often uses
-ldg128 to load 128 bits of data from global memory into registers at once, which can theoretically
-reduce the number of memory accesses by 4x.
+这里我们考虑用 registers 来优化 kernel。核心想法是：一次性在 registers 和
+global memory 之间搬运多个数据元素。比如 CUDA 里常见的 `ldg128`，会一次从
+global memory 读取 128 bits 到 registers，从理论上说可以把 memory access 次数
+减少到原来的四分之一。
 
-In our fused kernel example, intermediate results from A * B can also be stored in registers. When
-applying the ReLU operation, we can read directly from registers instead of global memory. (In
-practice, this may not need to be done explicitly—it can often be optimized automatically by
-NVCC through common subexpression elimination, or CSE.)
+在这个 fused kernel 例子里，`A * B` 的 intermediate result 也可以先放在 registers 里。
+这样在应用 ReLU 时，就可以直接从 registers 读取，而不必再次访问 global memory。
+当然在真实编译中，这种优化有时不需要你手动写，NVCC 也可能通过 common subexpression
+elimination（CSE）自动做掉。
 """
 
 """
-TileLang explicitly exposes these memory levels to users. You can use `T.alloc_fragment`
-to allocate a fragment of registers. Note that when you write CUDA, registers are thread-local.
-So when you write programs, you usually need to handle some logics to make sure each thread load
-certain part of the data into registers. But in TileLang, you don't need to do such mappings.
-A fragment is an abstraction of registers in all threads in a block. We can manipulate this
-fragment in a unified way as we do to a T.Buffer.
+TileLang 会把这些 memory level 显式暴露给用户。你可以使用 `T.alloc_fragment`
+来分配一块 fragment register 空间。要注意，在原生 CUDA 里，register 是 thread-local 的，
+所以你通常需要自己处理 mapping，确保每个 thread 只加载自己负责的那一部分数据。
+但在 TileLang 里，不需要你手动做这些映射。
+这里的 fragment 可以理解成一个 block 内所有 thread 的 register 抽象，我们可以像操作
+`T.Buffer` 一样统一地操作这个 fragment。
 """
 
 

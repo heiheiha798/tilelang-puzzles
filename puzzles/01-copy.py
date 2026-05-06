@@ -1,8 +1,8 @@
 """
 Puzzle 01: Copy
 ==============
-This puzzle asks you to implement a copy operation that copies data from one
-tensor to another.
+这个 puzzle 要你实现一个 copy operation，把数据从一个 tensor
+复制到另一个 tensor。
 
 Category: ["official"]
 Difficulty: ["easy"]
@@ -15,20 +15,20 @@ import torch
 from common.utils import bench_puzzle, test_puzzle
 
 """
-To begin with, we start to provide a runnable example of TileLang's copy.
-The code below shows how to define a 1-D copy kernel using TileLang. We assume
-all tensors are stored in the global memory (DRAM) of GPU initially.
+开始之前，我们先给一个可以直接运行的 TileLang copy 示例。
+下面这段代码展示了如何用 TileLang 定义一个 1-D copy kernel。这里假设
+所有 tensor 一开始都存放在 GPU 的 global memory (DRAM) 中。
 
 01-1: 1-D copy kernel.
 
-Inputs:
-    A: Tensor([N,], float16)  # input tensor
-    N: int   # size of the tensor. 1 <= N <= 1024*1024
+输入:
+    A: Tensor([N,], float16)  # 输入 tensor
+    N: int   # tensor 的大小，1 <= N <= 1024*1024
 
-Output:
-    B: Tensor([N,], float16)  # copied tensor
+输出:
+    B: Tensor([N,], float16)  # copy 之后得到的 tensor
 
-Definition:
+定义:
     for i in range(N):
         B[i] = A[i]
 """
@@ -41,39 +41,38 @@ def ref_copy_1d(A: torch.Tensor):
 
 
 """
-We will use TileLang's EagerJIT kernel programming style to provide a better programming experience.
+这里我们使用 TileLang 的 EagerJIT kernel 编程风格，这样写起来更直观。
 
-In TileLang, a kernel is defined as a Python function decorated with @tilelang.jit. This decorator
-enables JIT compilation of the kernel. The function parameters represent the input/output tensors
-(fully compacted torch Tensors) and other hyperparameters of the kernel. In this example, the input
-tensor A is passed as a parameter, and the output tensor B is returned as the result.
+在 TileLang 里，一个 kernel 通常定义成带有 `@tilelang.jit` 装饰器的 Python 函数。
+这个 decorator 会启用 kernel 的 JIT compilation。函数参数表示 kernel 的输入/输出 tensor
+（这里默认是 fully compacted 的 torch Tensor）以及其他 hyperparameter。
+在这个例子里，输入 tensor `A` 作为参数传入，输出 tensor `B` 作为返回值给出。
 
-After the function declaration, the host code section defines constants and tensor shapes/dtypes.
+函数声明之后，host code 部分会定义常量、tensor 的 shape 和 dtype。
 
-Next, we need to specify the kernel launch configuration. In TileLang, we use T.Kernel to launch
-a kernel. It accepts a list of blocks indicating the number of blocks to launch, and an integer
-threads specifying the number of threads per block. The kernel function will be launched with a
-total of blocks*threads threads.
+接下来我们需要指定 kernel launch configuration。在 TileLang 中，我们用 `T.Kernel`
+来启动一个 kernel。它接收 block 数量，以及一个 `threads` 整数来表示每个 block
+里有多少个 thread。最终启动的总 thread 数可以理解为 `blocks * threads`。
 
-In this first step, we will write a simple serial copy kernel that launches only one thread.
+第一步里，我们先写一个最简单的 serial copy kernel，只启动一个 thread。
 """
 
 
 @tilelang.jit
 def tl_copy_1d_serial(A):
-    # The host/declaration part of TileLang script.
+    # 这是 TileLang script 的 host/declaration 部分。
     N = T.const("N")
     A: T.Tensor((N,), T.float16)
     B = T.empty((N,), T.float16)
 
-    # The body of the kernel function is written in TileLang DSL.
-    # We use T.Kernel to launch a kernel.
+    # 下面是 kernel function 的主体，用 TileLang DSL 来写。
+    # 这里通过 T.Kernel 启动一个 kernel。
     with T.Kernel(1, threads=1) as _:
-        # Here T.copy is a built-in TileOp in TileLang.
-        # It will automatically utilize available threads in the block
-        # to do efficient memory copy (including auto parallelism and vectorization)
-        # As we only launch one thread here, it will be lowered into a serial loop copy
-        # with certain bit width vectorization (like 128 bits per copy).
+        # 这里的 T.copy 是 TileLang 内建的 TileOp。
+        # 它会自动利用当前 block 中可用的 thread 做高效 memory copy，
+        # 其中包括自动 parallelism 和 vectorization。
+        # 因为这里我们只启动了一个 thread，所以它最终会被 lower 成 serial loop copy，
+        # 同时仍可能带有一定的位宽 vectorization，比如一次 copy 128 bits。
         T.copy(A, B)
 
     return B
@@ -86,25 +85,23 @@ def run_copy_1d_serial():
 
 
 """
-The implementation above only launches a single thread, which is not efficient.
-Now we want to launch multiple threads within a single kernel to copy data in parallel.
+上面的实现只启动了一个 thread，所以效率不会高。
+现在我们希望在一个 kernel 里启动多个 thread，并行完成数据 copy。
 
-Since T.copy automatically parallelizes copying inside a block, we don't need many
-modifications to make it work.
+因为 `T.copy` 本身就会在一个 block 内自动做并行 copy，所以这里其实不需要改很多地方。
 
-Now, try changing the number of threads per block to 128 or 256 and compare the
-speedup you achieve.
+你可以尝试把每个 block 的 thread 数改成 128 或 256，然后比较一下 speedup。
 """
 
 
 @tilelang.jit
 def tl_copy_1d_multi_threads(A):
-    # The host/declaration part of TileLang script.
+    # 这是 TileLang script 的 host/declaration 部分。
     N = T.const("N")
     A: T.Tensor((N,), T.float16)
     B = T.empty((N,), T.float16)
 
-    # TODO: Implement this function
+    # TODO: 实现这个函数
 
     return B
 
@@ -115,7 +112,7 @@ def run_copy_1d_multi_threads():
 
     test_puzzle(tl_copy_1d_multi_threads, ref_copy_1d, {"N": N})
 
-    # This may take a while since N is large
+    # 因为 N 比较大，这里的 benchmark 可能会花一点时间
     bench_puzzle(
         tl_copy_1d_serial,
         ref_copy_1d,
@@ -133,25 +130,23 @@ def run_copy_1d_multi_threads():
 
 
 """
-Finally, we want to parallelize the copy operation across multiple blocks.
-We use BLOCK_N to represent the number of elements each block should copy.
-The rest of the implementation is similar to the previous version. We assume that N is divisible
-by BLOCK_N.
+最后，我们希望把 copy operation 进一步扩展到多个 block 上并行执行。
+这里用 `BLOCK_N` 表示每个 block 负责 copy 的元素数量。
+剩下的实现思路和前一个版本类似。这里假设 `N` 可以被 `BLOCK_N` 整除。
 
-Note: You will need to handle the memory access ranges for different blocks. Fortunately,
-we have `bx` (the block index) available, so you can compute the start and end indices for
-each block accordingly.
+注意：你需要自己处理不同 block 对应的 memory access 区间。好在这里我们可以拿到
+`bx`（也就是 block index），所以可以据此计算每个 block 的起始和结束位置。
 """
 
 
 @tilelang.jit
 def tl_copy_1d_parallel(A, BLOCK_N: int):
-    # The host/declaration part of TileLang script.
+    # 这是 TileLang script 的 host/declaration 部分。
     N = T.const("N")
     A: T.Tensor((N,), T.float16)
     B = T.empty((N,), T.float16)
 
-    # TODO: Implement this function
+    # TODO: 实现这个函数
 
     return B
 

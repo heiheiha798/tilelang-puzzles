@@ -1,8 +1,8 @@
 """
 Puzzle 04: Backward Op
 ==============
-This puzzle implements a backward operator for better understanding how TileLang
-handles a cutomized need.
+这个 puzzle 会实现一个 backward operator，用来更好地理解 TileLang
+如何处理自定义的计算需求。
 
 Category: ["official"]
 Difficulty: ["easy"]
@@ -15,21 +15,22 @@ import torch
 from common.utils import test_puzzle
 
 """
-Consider the fused vector multiplication ReLU example from the previous puzzle.
-We now extend the first input A to be a 2D tensor (Then B is like "broadcast" to this 2D shape).
+考虑前一个 puzzle 中 fused vector multiplication + ReLU 的例子。
+现在我们把第一个输入 `A` 扩展成 2D tensor，而 `B` 会像是被 "broadcast"
+到这个 2D shape 上。
 
 04-1: Fused multiplication ReLU with broadcasting.
 
-Inputs:
-    A: Tensor([N, M], float16)  # input tensor
-    B: Tensor([M,], float16)  # input tensor
-    N: int   # size of the tensor. 1 <= N <= 8192
-    M: int   # size of the tensor. 1 <= M <= 8192
+输入:
+    A: Tensor([N, M], float16)  # 输入 tensor
+    B: Tensor([M,], float16)  # 输入 tensor
+    N: int   # tensor 的大小，1 <= N <= 8192
+    M: int   # tensor 的大小，1 <= M <= 8192
 
-Output:
-    C: Tensor([N, M], float16)  # output tensor
+输出:
+    C: Tensor([N, M], float16)  # 输出 tensor
 
-Definition:
+定义:
     for i in range(N):
         for j in range(M):
             C[i, j] = max(0, A[i, j] * B[j])
@@ -42,7 +43,7 @@ def ref_mul_relu_bcast(A: torch.Tensor, B: torch.Tensor):
     assert A.shape[1] == B.shape[0]  # M
     assert A.dtype == B.dtype == torch.float16
 
-    # torch.mul will automatically broadcast B to A's shape
+    # torch.mul 会自动把 B broadcast 到 A 的 shape
     return (A * B).relu_()
 
 
@@ -73,24 +74,23 @@ def run_mul_relu_bcast():
 
 
 """
-Now let's consider the backward of the above operation.
-We will compute the gradient of the loss w.r.t. A. So the dC is given and we
-need to compute dA. According to the chain rule, our computation task can be
-formalized as:
+现在来考虑上面这个 operation 的 backward。
+我们要计算 loss 对 `A` 的 gradient，也就是在给定 `dC` 的情况下，
+求出 `dA`。根据 chain rule，这个计算任务可以形式化写成：
 
 04-2: Backward of fused multiplication ReLU with broadcasting.
 
-Inputs:
-    A: Tensor([N, M], float16)  # input tensor
-    B: Tensor([M,], float16)  # input tensor
-    dC: Tensor([N, M], float16)  # derivative w.r.t. C
-    N: int   # size of the tensor. 1 <= N <= 8192
-    M: int   # size of the tensor. 1 <= M <= 8192
+输入:
+    A: Tensor([N, M], float16)  # 输入 tensor
+    B: Tensor([M,], float16)  # 输入 tensor
+    dC: Tensor([N, M], float16)  # 对 C 的导数，derivative w.r.t. C
+    N: int   # tensor 的大小，1 <= N <= 8192
+    M: int   # tensor 的大小，1 <= M <= 8192
 
-Output:
-    dA: Tensor([N, M], float16)  # derivative w.r.t. A
+输出:
+    dA: Tensor([N, M], float16)  # 对 A 的导数，derivative w.r.t. A
 
-Definition:
+定义:
     for i in range(N):
         for j in range(M):
             dA[i, j] = dC[i, j] * B[j] * (A[i, j] * B[j] > 0)

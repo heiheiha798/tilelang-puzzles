@@ -1,7 +1,7 @@
 """
 Puzzle 08: Matrix Computation
 ==============
-We now start to solve one of the most basic workloads of deep learning in TileLang.
+现在我们开始处理 deep learning 里最基础的一类 workload：matrix computation。
 
 Category: ["official"]
 Difficulty: ["medium"]
@@ -14,29 +14,29 @@ import torch
 from common.utils import bench_puzzle, test_puzzle
 
 """
-This chapter contains two puzzles: (1) matrix-vector multiplication (GEMV) and
-(2) matrix-matrix multiplication (GEMM). GEMV can be implemented by extending our previous
-"reduce sum" example.
+这一章包含两个 puzzle：(1) matrix-vector multiplication（GEMV），以及
+(2) matrix-matrix multiplication（GEMM）。其中 GEMV 可以看作是前面
+"reduce sum" 例子的自然延伸。
 
-NOTE: Modern AI workloads usually use float16 as the default data type. Hence, we will use float16
-as the input/output dtype in this puzzle, with a seperate high-precision accumulator dtype like
-float32.
+注意：现代 AI workload 通常会把 `float16` 作为默认 data type。
+因此在这一题里，我们会使用 `float16` 作为输入/输出 dtype，同时配合一个更高精度的
+accumulator dtype，比如 `float32`。
 
 08-1: Matrix-Vector Multiplication.
 
-Inputs:
-    A: Tensor([M, K], float16)  # input matrix
-    B: Tensor([K,], float16)  # input vector
-    N: int   # size of the tensor. 1 <= N <= 8192
-    K: int   # size of the tensor. 1 <= K <= 8192
+输入:
+    A: Tensor([M, K], float16)  # 输入 matrix
+    B: Tensor([K,], float16)  # 输入 vector
+    N: int   # tensor 的大小，1 <= N <= 8192
+    K: int   # tensor 的大小，1 <= K <= 8192
 
-Output:
-    C: Tensor([M,], float16)  # output tensor
+输出:
+    C: Tensor([M,], float16)  # 输出 tensor
 
-Intermediates:
-    ACC: float32  # accumulator
+中间量:
+    ACC: float32  # 累加器，accumulator
 
-Definition:
+定义:
     for i in range(M):
         ACC = 0
         for k in range(K):
@@ -85,38 +85,37 @@ def run_gemv():
 
 
 """
-From GEMV to GEMM, the actual complexity of the problem grows exponentially. There are many
-optimizations you need to know if you want to implement a high-performance matmul kernel matched
-with cuBLAS, like pipelining, swizzling, tiling, etc. But with TileLang, we can focus on the
-dataflow and tiling computation.
+从 GEMV 走到 GEMM，问题的实际复杂度会明显上升。如果你想写出一个能接近 cuBLAS
+性能的高性能 matmul kernel，需要理解很多优化手段，比如 pipelining、swizzling、
+tiling 等等。但在 TileLang 里，我们可以先把注意力集中在 dataflow 和 tiling computation 上。
 
-In modern GPU like NVIDIA Hopper architecture, there are specialized units for matrix
-multiplication called Tensor Cores. They can perform operations like 16x16x16 FP16 tensor core
-operation, which is called a MMA instruction. In previous examples, most of our computations are
-performed on CUDA Cores, which are efficient for scalar/vector operations. However, Tensor Cores
-are optimized for matrix operations and can achieve much higher throughput for large matrices.
+在现代 GPU 上，比如 NVIDIA Hopper architecture，会有专门用于 matrix multiplication
+的硬件单元，叫 Tensor Cores。它们可以执行类似 `16x16x16` 的 FP16 tensor core
+operation，这种底层操作通常叫 MMA instruction。前面大多数例子里的计算主要跑在
+CUDA Cores 上，它们更适合 scalar/vector operation；而 Tensor Cores 则专门为 matrix
+operation 做了优化，在大矩阵场景下可以提供高得多的 throughput。
 
-TileLang wraps these complex instructions and memory loading patterns into a simple `T.gemm`
-operator that can be used to generate high-performance matrix multiplication kernels. `T.gemm`
-takes two Buffers as input and one Buffer as output, just like other TileOp we have seen before.
-The rest thing is just to tile the whole matrix.
+TileLang 把这些复杂 instruction 以及相关的 memory loading pattern 包装成了一个简单的
+`T.gemm` operator，用它就能生成高性能 matrix multiplication kernel。`T.gemm`
+和前面见过的其他 TileOp 一样，接收两个 Buffer 作为输入、一个 Buffer 作为输出。
+剩下的工作，核心就是把整个 matrix 做好 tiling。
 
 08-2: Matmul (Matrix-Matrix Multiplication)
 
-Inputs:
-    A: Tensor([M, K], float16)  # input tensor
-    B: Tensor([K, N], float16)  # input tensor
-    N: int   # size of the tensor. 1 <= N <= 8192
-    M: int   # size of the tensor. 1 <= M <= 8192
-    K: int   # size of the tensor. 1 <= K <= 8192
+输入:
+    A: Tensor([M, K], float16)  # 输入 tensor
+    B: Tensor([K, N], float16)  # 输入 tensor
+    N: int   # tensor 的大小，1 <= N <= 8192
+    M: int   # tensor 的大小，1 <= M <= 8192
+    K: int   # tensor 的大小，1 <= K <= 8192
 
-Intermediates:
-    ACC: float32  # accumulator
+中间量:
+    ACC: float32  # 累加器，accumulator
 
-Output:
-    C: [M, N]  # output tensor
+输出:
+    C: [M, N]  # 输出 tensor
 
-Definition:
+定义:
     for i in range(M):
         for j in range(N):
             ACC = 0
@@ -186,25 +185,21 @@ def run_matmul_naive():
 
 
 """
-Previous implementation works but the performance is not optimal. Here we introduce two
-optimizations here, with just a few lines of code changes.
+前一个实现可以工作，但性能还不够好。这里我们只通过少量代码改动，引入两个优化点。
 
-1. Shared Memory Optimization. We use fragment as the intermediate buffer in all previous puzzles
-without detailed explanation since we want to keep the tutorial simple. However, recall that the
-essential of fragment is the unified memory abstraction of registers in all threads. If we put
-A, B, C tiles all in registers, the registers will be exhausted quickly and cause register
-spilling. Therefore, we need to use shared memory to store the tiles of A and B. `T.gemm` will
-efficiently help us load data from shared memory, so we can directly use `T.alloc_shared` to
-allocate shared memory for A and B tiles.
+1. Shared Memory Optimization。前面的 puzzle 里，我们一直在使用 fragment 作为
+intermediate buffer，但没有展开讲太多，是为了让教程更简单。现在要回忆一下：
+fragment 本质上是一个 block 内所有 thread 的 register 统一抽象。如果把 `A`、`B`、`C`
+的 tile 全部塞进 registers，register 很快就会不够用，进而发生 register spilling。
+所以这里需要把 `A` 和 `B` 的 tile 放进 shared memory。`T.gemm` 会高效地从 shared memory
+读取数据，因此我们可以直接用 `T.alloc_shared` 给这些 tile 分配 shared memory。
 
-2. Software Pipeline. Starting from the NVIDIA Ampere architecture, software pipeline is an
-important optimization technique to overlap computation and memory access. In our case, we can use
-software pipeline to overlap the loading of A and B tiles with the computation of the GEMM
-operation. This is achieved by using `T.Pipeline` to replace `T.Serial` and specifying a proper
-stage number, like num_stage=3.
+2. Software Pipeline。从 NVIDIA Ampere architecture 开始，software pipeline 就成了一个
+非常重要的优化技术，用来重叠 computation 和 memory access。在这里，我们可以用 software
+pipeline 来把 `A` 和 `B` tile 的加载，与 GEMM operation 的计算重叠起来。实现方式是用
+`T.Pipeline` 替换 `T.Serial`，并设置一个合适的 stage 数，比如 `num_stage=3`。
 
-After modifying the code, we can take a look at the generated CUDA code and compare the performance
-improvement.
+改完之后，你可以直接看生成出来的 CUDA code，并比较性能提升。
 """
 
 

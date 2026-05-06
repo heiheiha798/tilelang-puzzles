@@ -1,7 +1,7 @@
 """
 Puzzle 09: Convolution
 ==============
-Convolution is another fundamental computation pattern in deep learning operators.
+Convolution 是 deep learning operator 里另一种非常基础的 computation pattern。
 
 Category: ["official"]
 Difficulty: ["medium"]
@@ -14,46 +14,44 @@ import torch
 from common.utils import bench_puzzle, test_puzzle
 
 """
-Convolution uses a sliding window approach to compute over a input tensors. The main
-characteristics of convolution is that it has strong data reuse patterns and requires careful
-memory access optimization. But with TileLang, we can ignore most of these details and focus on
-the logic.
+Convolution 本质上是通过 sliding window 的方式，在输入 tensor 上滑动并计算。
+它最重要的特点是数据复用很强，因此通常需要非常小心地处理 memory access optimization。
+不过在 TileLang 里，我们可以先忽略绝大多数底层细节，把注意力放在计算逻辑上。
 
-In this puzzle, we remove the "channel (C)" dimension to simplify the problem. We first look at
-the 1D convolution case, then extend to 2D. And we will learn how to use shared memory of GPU in
-this chapter.
+在这个 puzzle 里，我们先去掉 "channel (C)" 维度，简化整个问题。
+我们会先看 1D convolution，再进一步扩展到 2D。与此同时，这一章也会接触到 GPU 的
+shared memory 应该怎么用。
 
-08-1: 1D Convolution.
+09-1: 1D Convolution.
 
-Inputs:
-    X: Tensor([N, L], float16)  # input tensor
+输入:
+    X: Tensor([N, L], float16)  # 输入 tensor
     K: Tensor([KL,], float16)  # kernel tensor
-    N: int   # batch size dimension. 1 <= N <= 64
-    H: int   # length dimension. 1 <= H <= 1024
-    KL: int  # kernel height. 1 <= KH <= 32
+    N: int   # batch size 维度，1 <= N <= 64
+    H: int   # length 维度，1 <= H <= 1024
+    KL: int  # kernel 长度，1 <= KH <= 32
 
-Output:
-    O: Tensor([N, L], float16)  # output tensor
+输出:
+    O: Tensor([N, L], float16)  # 输出 tensor
 
-Intermediates:
-    ACC: float32  # accumulator
+中间量:
+    ACC: float32  # 累加器，accumulator
 
-Definition:
+定义:
     for i in range(N):
         for j in range(L):
             ACC = 0
             for k in range(KL):
-                if j + k < L:  # boundary check
+                if j + k < L:  # 边界检查，boundary check
                     ACC += X[i, j + k] * K[k]
             O[i, j] = ACC
 """
 
 
 """
-We can first consider a naive implementation. We can parallelize the outer loop over `N` and `L` to
-different blocks with `T.Kernel`.
-For the loop iterating `BLOCK_L`, we can use a serial implementation for now. Be careful that the
-data dependency in the convolution.
+我们可以先考虑一个 naive implementation。外层遍历 `N` 和 `L` 的 loop 可以通过
+`T.Kernel` 分配到不同 block 上。至于遍历 `BLOCK_L` 的 loop，当前先用 serial
+实现即可。要特别留意 convolution 里的 data dependency。
 """
 
 
@@ -66,7 +64,7 @@ def ref_conv1d(X: torch.Tensor, K: torch.Tensor):
     #     for j in range(L):
     #         O[i, j] = 0
     #         for k in range(KL):
-    #             if j + k < L:  # boundary check
+    #             if j + k < L:  # 边界检查，boundary check
     #                 O[i, j] += X[i, j + k] * K[k]
 
     N, L = X.shape
@@ -115,38 +113,37 @@ def run_conv1d_naive():
 
 
 """
-The naive implementation of Conv 1D works but it is not efficient. Remember that we mentioned
-Tensor Core and `T.gemm` in previous puzzle? Actually, we can also convert the convolution problem
-to a GEMM problem through a transformation called `im2col`. The idea is to transform the
-convolution into a matrix multiplication where each row of the input matrix corresponds to a local
-patch of the input tensor, and the kernel is reshaped into a matrix. This allows us to leverage
-highly optimized GEMM implementations.
+naive 的 Conv1D 实现能工作，但效率不高。还记得上一题提到过 Tensor Core 和 `T.gemm`
+吗？实际上，我们也可以通过一个叫 `im2col` 的变换，把 convolution 问题转成 GEMM。
+核心想法是：把 convolution 改写成 matrix multiplication，其中输入 matrix 的每一行
+对应输入 tensor 的一个局部 patch，而 kernel 则被 reshape 成另一个 matrix。
+这样就能直接复用高度优化的 GEMM 实现。
 
-To present GEMM from degenerating to GEMV, we need to introduce an output channel dimension F.
+为了避免这个 GEMM 退化成 GEMV，我们需要引入一个输出 channel 维度 `F`。
 
-08-2: 1D Convolution with multiple output channels.
+09-2: 1D Convolution with multiple output channels.
 
-Inputs:
-    X: Tensor([N, L], float16)  # input tensor
+输入:
+    X: Tensor([N, L], float16)  # 输入 tensor
     K: Tensor([KL, F], float16)  # kernel tensor
-    N: int   # batch size dimension. 1 <= N <= 64
-    H: int   # length dimension. 1 <= H <= 1024
-    KL: int  # kernel height. 1 <= KH <= 32
-    F: int   # filter channels. 32 <= F <= 128
+    N: int   # batch size 维度，1 <= N <= 64
+    H: int   # length 维度，1 <= H <= 1024
+    KL: int  # kernel 长度，1 <= KH <= 32
+    F: int   # filter channel 数，32 <= F <= 128
 
-Output:
-    O: Tensor([N, L, F], float16)  # output tensor
+输出:
+    O: Tensor([N, L, F], float16)  # 输出 tensor
 
-Intermediates:
-    ACC: float32  # accumulator
+中间量:
+    ACC: float32  # 累加器，accumulator
 
-Definition:
+定义:
     for i in range(N):
         for j in range(L):
             for f in range(F):
                 ACC = 0
                 for k in range(KL):
-                    if j + k < L:  # boundary check
+                    if j + k < L:  # 边界检查，boundary check
                         ACC += X[i, j + k] * K[k, f]
                 O[i, j, f] = ACC
 """
@@ -162,7 +159,7 @@ def ref_conv1d_multi_outchannel(X: torch.Tensor, K: torch.Tensor):
     #         for f in range(F):
     #             O[i, j, f] = 0
     #             for k in range(KL):
-    #                 if j + k < L:  # boundary check
+    #                 if j + k < L:  # 边界检查，boundary check
     #                     O[i, j, f] += X[i, j + k] * K[k, f]
 
     N, L = X.shape
@@ -182,8 +179,7 @@ def ref_conv1d_multi_outchannel(X: torch.Tensor, K: torch.Tensor):
 
 
 """
-First let's implement the trivial extension of conv1d to multiple output channels, based on the
-above F=1 version.
+先从最直接的版本开始，把上面 `F=1` 的 conv1d 扩展成多输出 channel 版本。
 """
 
 
@@ -207,7 +203,7 @@ def tl_conv1d_multi_outchannel(X, K, BLOCK_N: int, BLOCK_L: int):
 
 
 """
-Then let's try im2col and use T.gemm to speedup the computation.
+接着再试试 `im2col`，并用 `T.gemm` 来加速这个计算。
 """
 
 

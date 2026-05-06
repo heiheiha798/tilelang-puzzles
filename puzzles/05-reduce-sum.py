@@ -1,7 +1,7 @@
 """
 Puzzle 05: Reduce Sum
 ==============
-In this puzzle, you will learn how to do reduce in TileLang.
+这个 puzzle 会带你学习如何在 TileLang 里做 reduce。
 
 Category: ["official"]
 Difficulty: ["easy"]
@@ -14,30 +14,30 @@ import torch
 from common.utils import bench_puzzle, test_puzzle
 
 """
-We already do broadcasting in previous example. Now let's see how to do reduction. Luckily,
-we don't need to implement detailed reduction logics since TileLang provides built-in
-TileOps. Before this, T.copy is the only TileOp we have seen. But we have experienced that
-with T.copy and T.Parallel we can already do many things!
+前面的例子里我们已经做过 broadcasting。现在来看 reduction 应该怎么写。幸运的是，
+我们不需要自己实现所有 reduction 细节，因为 TileLang 已经提供了内建 TileOp。
+在这之前，我们见到的 TileOp 基本只有 `T.copy`，但你应该已经体会到，仅靠
+`T.copy` 和 `T.Parallel`，其实就能搭出很多东西。
 
-HINT:
-1. For reduction, we have `T.reduce` and `T.reduce_xxx`, where xxx represents the reduction
-operation, e.g., `T.reduce_sum`. Note that for efficiency, we need to perform these TileOps
-in the fragment buffers instead of global memory.
-2. You may need a serial loop to do this puzzle. Use `T.Serial` to create a serial loop.
-3. For numerical stability, we shift the data type to float32 for now.
+提示:
+1. 对 reduction 来说，可以使用 `T.reduce` 和 `T.reduce_xxx`，其中 `xxx`
+代表具体的 reduction operation，比如 `T.reduce_sum`。为了效率，最好把这些
+TileOp 放在 fragment buffer 上执行，而不是直接在 global memory 上做。
+2. 这道题可能需要 serial loop，可以用 `T.Serial` 来创建。
+3. 为了 numerical stability，这里暂时把数据类型提升到 `float32`。
 
 05-1: Reduce sum.
 
-Inputs:
-    A: Tensor([N, M], float32)  # input tensor
-    B: Tensor([N,], float32)  # input tensor
-    N: int   # size of the tensor. 1 <= N <= 4096
-    M: int   # size of the tensor. 1 <= M <= 16384
+输入:
+    A: Tensor([N, M], float32)  # 输入 tensor
+    B: Tensor([N,], float32)  # 输入 tensor
+    N: int   # tensor 的大小，1 <= N <= 4096
+    M: int   # tensor 的大小，1 <= M <= 16384
 
-Output:
-    B: Tensor([N,], float32)  # output tensor
+输出:
+    B: Tensor([N,], float32)  # 输出 tensor
 
-Definition:
+定义:
     for i in range(N):
         B[i] = 0
         for j in range(M):
