@@ -55,7 +55,13 @@ def tl_mul_relu_bcast(A, B, BLOCK_N: int, BLOCK_M: int):
     B: T.Tensor((M,), dtype)
     C = T.empty((N, M), dtype)
 
-    # TODO: Implement this function
+    with T.Kernel(N // BLOCK_N, M // BLOCK_M, threads=256) as (pid_n, pid_m):
+        n_idx = pid_n * BLOCK_N
+        m_idx = pid_m * BLOCK_M
+
+        for i, j in T.Parallel(BLOCK_N, BLOCK_M):
+            product = A[n_idx + i, m_idx + j] * B[m_idx + j]
+            C[n_idx + i, m_idx + j] = T.if_then_else(product > 0, product, 0)
 
     return C
 
@@ -128,7 +134,14 @@ def tl_mul_relu_bwd(A, B, dC, BLOCK_N: int, BLOCK_M: int):
     dC: T.Tensor((N, M), dtype)
     dA = T.empty((N, M), dtype)
 
-    # TODO: Implement this function
+    with T.Kernel(N // BLOCK_N, M // BLOCK_M, threads=256) as (pid_n, pid_m):
+        n_idx = pid_n * BLOCK_N
+        m_idx = pid_m * BLOCK_M
+
+        for i, j in T.Parallel(BLOCK_N, BLOCK_M):
+            product = A[n_idx + i, m_idx + j] * B[m_idx + j]
+            grad = dC[n_idx + i, m_idx + j] * B[m_idx + j]
+            dA[n_idx + i, m_idx + j] = T.if_then_else(product > 0, grad, 0)
 
     return dA
 
