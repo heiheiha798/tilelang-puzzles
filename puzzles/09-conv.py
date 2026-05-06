@@ -93,7 +93,25 @@ def tl_conv1d_naive(X, K, BLOCK_N: int, BLOCK_L: int):
     K: T.Tensor((KL,), dtype)
     O = T.empty((N, L), dtype)
 
-    # TODO: Implement this function
+    with T.Kernel(N // BLOCK_N, L // BLOCK_L, threads=256) as (pid_n, pid_l):
+        X_shared = T.alloc_shared((BLOCK_N, BLOCK_L + KL), dtype)
+        K_local = T.alloc_fragment((KL), dtype)
+        O_local = T.alloc_shared((BLOCK_N,), accum_dtype)
+        temp = T.alloc_fragment((BLOCK_N, KL), accum_dtype)
+
+        T.copy(X[pid_n * BLOCK_N, pid_l * BLOCK_L], X_shared)
+        T.copy(K, K_local)
+
+        for l in T.Serial(BLOCK_L):
+            for i, kl in T.Parallel(BLOCK_N, KL):
+                if pid_l * BLOCK_L + l + kl < L:
+                    temp[i, kl] = X_shared[i, l + kl].astype(accum_dtype) * K_local[kl].astype(
+                        accum_dtype
+                    )
+                else:
+                    temp[i, kl] = 0
+            T.reduce_sum(temp, O_local, dim=-1, clear=True)
+            T.copy(O_local, O[pid_n * BLOCK_N : (pid_n + 1) * BLOCK_N, pid_l * BLOCK_L + l])
 
     return O
 
@@ -197,7 +215,28 @@ def tl_conv1d_multi_outchannel(X, K, BLOCK_N: int, BLOCK_L: int):
     K: T.Tensor((KL, F), dtype)
     O = T.empty((N, L, F), dtype)
 
-    # TODO: Implement this function
+    with T.Kernel(N // BLOCK_N, L // BLOCK_L, threads=256) as (pid_n, pid_l):
+        X_shared = T.alloc_shared((BLOCK_N, BLOCK_L + KL), dtype)
+        K_local = T.alloc_fragment((KL, F), dtype)
+        O_local = T.alloc_shared((BLOCK_N, F), accum_dtype)
+        temp = T.alloc_fragment((BLOCK_N, KL, F), accum_dtype)
+
+        T.copy(X[pid_n * BLOCK_N, pid_l * BLOCK_L], X_shared)
+        T.copy(K, K_local)
+
+        for l in T.Serial(BLOCK_L):
+            for i, f, kl in T.Parallel(BLOCK_N, F, KL):
+                if pid_l * BLOCK_L + l + kl < L:
+                    temp[i, kl, f] = X_shared[i, l + kl].astype(accum_dtype) * K_local[
+                        kl, f
+                    ].astype(accum_dtype)
+                else:
+                    temp[i, kl, f] = 0
+            T.reduce_sum(temp, O_local, dim=1, clear=True)
+            T.copy(
+                O_local,
+                O[pid_n * BLOCK_N : (pid_n + 1) * BLOCK_N, pid_l * BLOCK_L + l, :],
+            )
 
     return O
 
@@ -221,7 +260,22 @@ def tl_conv1d_im2col(X, K, BLOCK_N: int, BLOCK_L: int):
     K: T.Tensor((KL, F), dtype)
     O = T.empty((N, L, F), dtype)
 
-    # TODO: Implement this function
+    with T.Kernel(N // BLOCK_N, L // BLOCK_L, threads=256) as (pid_n, pid_l):
+        X_shared = T.alloc_shared((BLOCK_N, BLOCK_L, KL), dtype)
+        K_shared = T.alloc_shared((KL, F), dtype)
+        O_local = T.alloc_fragment((BLOCK_N * BLOCK_L, F), accum_dtype)
+
+        for i, j, k in T.Parallel(BLOCK_N, BLOCK_L, KL):
+            X_shared[i, j, k] = T.if_then_else(
+                pid_l * BLOCK_L + j + k < L,
+                X[pid_n * BLOCK_N + i, pid_l * BLOCK_L + j + k],
+                0,
+            )
+        X_reshaped = T.reshape(X_shared, (BLOCK_N * BLOCK_L, KL))
+        T.copy(K, K_shared)
+        T.gemm(X_reshaped, K_shared, O_local, clear_accum=True)
+        O_reshaped = T.reshape(O_local, (BLOCK_N, BLOCK_L, F))
+        T.copy(O_reshaped, O[pid_n * BLOCK_N, pid_l * BLOCK_L, 0])
 
     return O
 
