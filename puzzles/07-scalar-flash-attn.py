@@ -81,7 +81,50 @@ def tl_scalar_flash_attn(Q, K, V, BLOCK_B: int, BLOCK_S: int):
     V: T.Tensor((B, S), dtype)
     O = T.empty((B, S), dtype)
 
-    # TODO: Implement this function
+    with T.Kernel(B // BLOCK_B, threads=256) as pid_b:
+        Q_local = T.alloc_fragment((BLOCK_B, BLOCK_S), dtype)
+        K_local = T.alloc_fragment((BLOCK_B, BLOCK_S), dtype)
+        V_local = T.alloc_fragment((BLOCK_B, BLOCK_S), dtype)
+        O_local = T.alloc_fragment((BLOCK_B, BLOCK_S), dtype)
+
+        cur_QK = T.alloc_fragment((BLOCK_B, BLOCK_S), dtype)
+        cur_exp_QK = T.alloc_fragment((BLOCK_B, BLOCK_S), dtype)
+        cur_max_QK = T.alloc_fragment((BLOCK_B,), dtype)
+        cur_sum_exp_QK = T.alloc_fragment((BLOCK_B,), dtype)
+        lse = T.alloc_fragment((BLOCK_B,), dtype)
+
+        T.fill(lse, -T.infinity(dtype))
+
+        for s_blk_id in T.Serial(S // BLOCK_S):
+            T.copy(Q[pid_b * BLOCK_B, s_blk_id * BLOCK_S], Q_local)
+            T.copy(K[pid_b * BLOCK_B, s_blk_id * BLOCK_S], K_local)
+
+            for i, j in T.Parallel(BLOCK_B, BLOCK_S):
+                cur_QK[i, j] = Q_local[i, j] * K_local[i, j]
+
+            T.reduce_max(cur_QK, cur_max_QK, dim=1, clear=True)
+
+            for i, j in T.Parallel(BLOCK_B, BLOCK_S):
+                cur_exp_QK[i, j] = T.exp2(cur_QK[i, j] * log2_e - cur_max_QK[i] * log2_e)
+
+            T.reduce_sum(cur_exp_QK, cur_sum_exp_QK, dim=1, clear=True)
+
+            for i in T.Parallel(BLOCK_B):
+                lse[i] = cur_max_QK[i] * log2_e + T.log2(
+                    T.exp2(lse[i] - cur_max_QK[i] * log2_e) + cur_sum_exp_QK[i]
+                )
+
+        for s_blk_id in T.Serial(S // BLOCK_S):
+            T.copy(Q[pid_b * BLOCK_B, s_blk_id * BLOCK_S], Q_local)
+            T.copy(K[pid_b * BLOCK_B, s_blk_id * BLOCK_S], K_local)
+            T.copy(V[pid_b * BLOCK_B, s_blk_id * BLOCK_S], V_local)
+
+            for i, j in T.Parallel(BLOCK_B, BLOCK_S):
+                O_local[i, j] = (
+                    T.exp2(Q_local[i, j] * K_local[i, j] * log2_e - lse[i]) * V_local[i, j]
+                )
+
+            T.copy(O_local, O[pid_b * BLOCK_B, s_blk_id * BLOCK_S])
 
     return O
 
