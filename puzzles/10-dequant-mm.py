@@ -81,7 +81,24 @@ def tl_dequant_matmul(A, B, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int):
     C = T.empty((M, N), A_dtype)
     accum_dtype = T.float32
 
-    # TODO: Implement this function
+    with T.Kernel(T.ceildiv(M, BLOCK_M), T.ceildiv(N, BLOCK_N), threads=128) as (pid_m, pid_n):
+        A_shared = T.alloc_shared((BLOCK_M, BLOCK_K), A_dtype)
+        B_shared = T.alloc_shared((BLOCK_K, BLOCK_N // 2), B_storage_dtype)
+        B_dequantized = T.alloc_shared((BLOCK_K, BLOCK_N), A_dtype)
+        C_local = T.alloc_fragment((BLOCK_M, BLOCK_N), accum_dtype)
+
+        T.clear(C_local)
+        for k in T.Pipelined(T.ceildiv(K, BLOCK_K), num_stages=3):
+            T.copy(A[pid_m * BLOCK_M, k * BLOCK_K], A_shared)
+            T.copy(B[k * BLOCK_K, pid_n * BLOCK_N // 2], B_shared)
+
+            for i, j in T.Parallel(BLOCK_K, BLOCK_N // 2):
+                B_dequantized[i, j * 2] = T.cast(B_shared[i, j] & 0x0F, A_dtype) - 8.0
+                B_dequantized[i, j * 2 + 1] = T.cast((B_shared[i, j] >> 4) & 0x0F, A_dtype) - 8.0
+
+            T.gemm(A_shared, B_dequantized, C_local)
+
+        T.copy(C_local, C[pid_m * BLOCK_M, pid_n * BLOCK_N])
 
     return C
 
