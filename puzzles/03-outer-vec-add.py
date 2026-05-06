@@ -56,7 +56,12 @@ def tl_outer_add(A, B, BLOCK_N: int, BLOCK_M: int):
     B: T.Tensor((M,), dtype)
     C = T.empty((N, M), dtype)
 
-    # TODO: Implement this function
+    with T.Kernel(N // BLOCK_N, M // BLOCK_M, threads=256) as (pid_n, pid_m):
+        n_idx = pid_n * BLOCK_N
+        m_idx = pid_m * BLOCK_M
+
+        for i, j in T.Parallel(BLOCK_N, BLOCK_M):
+            C[n_idx + i, m_idx + j] = A[n_idx + i] + B[m_idx + j]
 
     return C
 
